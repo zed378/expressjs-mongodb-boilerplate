@@ -1,3 +1,4 @@
+const { Int32 } = require("mongodb");
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
@@ -41,9 +42,15 @@ const usersSchema = new Schema(
       required: false,
       default: false,
     },
+    otp: {
+      type: Number,
+      required: false,
+      default: 101010,
+    },
     token: {
       type: String,
       required: false,
+      default: "",
     },
   },
   { timestamps: true }

@@ -10,6 +10,7 @@ const nodemailer = require("nodemailer");
 const fs = require("fs");
 const mustache = require("mustache");
 const template = fs.readFileSync(__dirname + "/template.html", "utf8");
+const templateOTP = fs.readFileSync(__dirname + "/OTP.html", "utf8");
 const transporter = nodemailer.createTransport({
   service: "hotmail",
   auth: {
@@ -17,30 +18,6 @@ const transporter = nodemailer.createTransport({
     pass: process.env.MAIL_PASSWORD,
   },
 });
-
-exports.activation = async (req, res) => {
-  try {
-    const { p } = req.query;
-
-    const isUserExist = await userModel.findByIdAndUpdate(p, {
-      isActive: true,
-    });
-
-    if (isUserExist) {
-      res.status(200).redirect(process.env.FE_URL);
-    } else {
-      res.status(400).send({
-        status: "Error",
-        message: "Your account failed to activate",
-      });
-    }
-  } catch (error) {
-    res.status(400).send({
-      status: "Error",
-      message: error.message,
-    });
-  }
-};
 
 exports.register = async (req, res) => {
   try {
@@ -50,14 +27,6 @@ exports.register = async (req, res) => {
     if (!isUserExist) {
       bcrypt.genSalt(saltRounds, function (err, salt) {
         bcrypt.hash(password, salt, async function (err, hash) {
-          const token = jwt.sign(
-            { firstName, lastName, email, role: "Authenticated" },
-            secret,
-            {
-              expiresIn: 60 * 60 * 24 * 2,
-            }
-          );
-
           const newUser = new userModel({
             firstName,
             lastName,
@@ -65,7 +34,6 @@ exports.register = async (req, res) => {
             password: hash,
             username: "",
             picture: "",
-            token,
           });
 
           const saveUSer = await newUser.save();
@@ -76,8 +44,8 @@ exports.register = async (req, res) => {
               to: email,
               subject: "Success Registration",
               html: mustache.render(template, {
-                firstName: "Muhammad",
-                lastName: "Zawawi",
+                firstName: firstName,
+                lastName: lastName,
                 link: `${process.env.HOST_URL}/activation?p=${saveUSer.id}`,
               }),
             };
@@ -113,6 +81,30 @@ exports.register = async (req, res) => {
   }
 };
 
+exports.activation = async (req, res) => {
+  try {
+    const { p } = req.query;
+
+    const isUserExist = await userModel.findByIdAndUpdate(p, {
+      isActive: true,
+    });
+
+    if (isUserExist) {
+      res.status(200).redirect(process.env.FE_URL);
+    } else {
+      res.status(400).send({
+        status: "Error",
+        message: "Your account failed to activate",
+      });
+    }
+  } catch (error) {
+    res.status(400).send({
+      status: "Error",
+      message: error.message,
+    });
+  }
+};
+
 exports.login = async (req, res) => {
   try {
     const { user, password } = req.body;
@@ -125,7 +117,7 @@ exports.login = async (req, res) => {
             password,
             isUserExist.password,
             async function (err, result) {
-              if (err) {
+              if (!result || err) {
                 res.status(400).send({
                   status: "Error",
                   message: "Email or Username or Password incorrect",
@@ -177,7 +169,7 @@ exports.login = async (req, res) => {
             password,
             isUserEmailExist.password,
             async function (err, result) {
-              if (err) {
+              if (err || !result) {
                 res.status(400).send({
                   status: "Error",
                   message: "Email or Username or Password incorrect",
@@ -252,6 +244,149 @@ exports.logout = async (req, res) => {
       });
   } catch (error) {
     res.status(400).send({ status: "Error", message: "Failed to logout" });
+  }
+};
+
+exports.sendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const isUserExist = await userModel.findOne({ email });
+
+    if (!isUserExist) {
+      res.status(400).send({
+        status: "Error",
+        message: "Make sure you already registered",
+      });
+    } else {
+      const token = jwt.sign(
+        {
+          firstName: isUserExist.firstName,
+          lastName: isUserExist.lastName,
+          email: isUserExist.email,
+          role: isUserExist.role,
+        },
+        secret,
+        {
+          expiresIn: 60 * 5,
+        }
+      );
+
+      function getRandomInt() {
+        return Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
+      }
+
+      const otp = getRandomInt();
+
+      await userModel.findOneAndUpdate(isUserExist._id, {
+        token,
+        otp,
+      });
+
+      const options = {
+        from: process.env.MAIL_USER,
+        to: email,
+        subject: "OTP for reset password",
+        html: mustache.render(templateOTP, {
+          firstName: isUserExist.firstName,
+          lastName: isUserExist.lastName,
+          otp: otp,
+        }),
+      };
+
+      transporter.sendMail(options, (err, info) => {
+        if (err) {
+          res.send({
+            status: "Error",
+            message: {
+              error: err,
+              solution: "Contact your administrator for help",
+            },
+          });
+        } else {
+          res.status(200).send({
+            status: "Success",
+            message:
+              "Yor OTP has been sent. Check your email. If not exist in inbox search on spam.",
+          });
+        }
+      });
+    }
+  } catch (error) {
+    res.status(400).send({ status: "Error", message: "Failed to send OTP" });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, password, otp } = req.body;
+    const isUserExist = await userModel.findOne({ email });
+
+    if (isUserExist) {
+      jwt.verify(isUserExist.token, secret, async (err, decoded) => {
+        if (!err) {
+          if (otp === 101010) {
+            res.status(400).send({
+              status: "Error",
+              message: "Make sure you succeed request OTP",
+            });
+          } else if (otp === isUserExist.otp) {
+            const updateOTP = await userModel.findByIdAndUpdate(
+              isUserExist._id,
+              {
+                otp: 101010,
+                token: "",
+              }
+            );
+
+            if (updateOTP) {
+              bcrypt.genSalt(saltRounds, function (err, salt) {
+                bcrypt.hash(password, salt, async function (err, hash) {
+                  const updatePass = await userModel.findByIdAndUpdate(
+                    isUserExist._id,
+                    {
+                      password: hash,
+                    }
+                  );
+
+                  if (updatePass) {
+                    res.status(200).send({
+                      status: "Success",
+                      message:
+                        "Your password successfully updated. Now you can login with your new password.",
+                    });
+                  } else {
+                    res.status(400).send({
+                      status: "Error",
+                      message: "Failed to reset password",
+                    });
+                  }
+                });
+              });
+            } else {
+              res.status(400).send({
+                status: "Error",
+                message: "Failed to reset token and otp",
+              });
+            }
+          }
+        } else if (otp !== isUserExist.otp) {
+          await userModel.findByIdAndUpdate(isUserExist._id, {
+            token: "",
+            otp: 101010,
+          });
+          res.status(400).send({
+            status: "Invalid",
+            message: "Your OTP is expires. Try request new OTP.",
+          });
+        }
+      });
+    }
+  } catch (error) {
+    res.status(400).send({
+      status: "Error",
+      message: "Failed to reset password",
+    });
   }
 };
 

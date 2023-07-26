@@ -82,7 +82,7 @@ exports.updatePict = async (req, res) => {
         message: "Makesure you are registered",
       });
     } else {
-      if (token != isUserExist.token) {
+      if (token !== isUserExist.token) {
         await userModel.findByIdAndUpdate(id, {
           token: "",
         });

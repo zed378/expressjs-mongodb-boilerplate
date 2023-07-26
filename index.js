@@ -3,7 +3,6 @@ const cors = require("cors");
 const router = require("./src/routes/");
 require("dotenv").config();
 const connectDB = require("./config/dbConnection");
-const morgan = require("morgan");
 const { template } = require("./src/model");
 
 // security
