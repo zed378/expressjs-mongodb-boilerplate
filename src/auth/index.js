@@ -138,8 +138,8 @@ exports.login = async (req, res) => {
                   }
                 );
 
-                await userModel.findByIdAndUpdate(isUserExist.id, {
-                  token,
+                await userModel.findByIdAndUpdate(isUserExist._id, {
+                  token: token,
                 });
 
                 res.status(200).send({
@@ -190,7 +190,7 @@ exports.login = async (req, res) => {
                   }
                 );
 
-                await userModel.findByIdAndUpdate(isUserExist?._id, {
+                await userModel.findByIdAndUpdate(isUserEmailExist._id, {
                   token,
                 });
 

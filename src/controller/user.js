@@ -18,13 +18,23 @@ exports.updateUserName = async (req, res) => {
     const token = bearer.split(" ")[1];
 
     const isUserExist = await userModel.findById(id);
+    const isUsernameExist = await userModel.findOne({ username });
+
+    if (isUsernameExist) {
+      res.status(400).send({
+        status: "Error",
+        message: "Username already taken. Choose another username.",
+      });
+    }
 
     if (!isUserExist) {
       res.status(400).send({
         status: "Error",
         message: "Makesure you are registered",
       });
-    } else {
+    }
+
+    if (isUserExist && !isUsernameExist) {
       if (token != isUserExist.token) {
         await userModel.findByIdAndUpdate(id, {
           token: "",
