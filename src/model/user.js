@@ -33,7 +33,7 @@ const usersSchema = new Schema(
     role: {
       type: String,
       required: false,
-      enum: ["Admin", "Authenticated"],
+      enum: ["Admin", "Authenticated", "Super"],
       default: "Authenticated",
     },
     isActive: {

@@ -33,41 +33,39 @@ exports.register = async (req, res) => {
             email,
             password: hash,
             username: "",
-            picture: "",
           });
 
-          const saveUSer = await newUser.save();
+          const options = {
+            from: process.env.MAIL_USER,
+            to: email,
+            subject: "Success Registration",
+            html: mustache.render(template, {
+              firstName: firstName,
+              lastName: lastName,
+              link: `${process.env.HOST_URL}/activation?p=${saveUSer.id}`,
+            }),
+          };
 
-          if (saveUSer) {
-            const options = {
-              from: process.env.MAIL_USER,
-              to: email,
-              subject: "Success Registration",
-              html: mustache.render(template, {
-                firstName: firstName,
-                lastName: lastName,
-                link: `${process.env.HOST_URL}/activation?p=${saveUSer.id}`,
-              }),
-            };
-
-            transporter.sendMail(options, (err, info) => {
-              if (err) {
-                res.send({
-                  status: "Error",
-                  message: {
-                    error: err,
-                    solution: "Contact your administrator for help",
-                  },
-                });
-              } else {
+          transporter.sendMail(options, async (err, info) => {
+            if (err) {
+              res.send({
+                status: "Error",
+                message: {
+                  error: err,
+                  solution:
+                    "Failed to sending email. Contact your administrator for help.",
+                },
+              });
+            } else {
+              await newUser.save().then(() =>
                 res.status(200).send({
                   status: "Success",
                   message:
                     "Successfully register. Check your mailbox to activate your account.",
-                });
-              }
-            });
-          }
+                })
+              );
+            }
+          });
         });
       });
     } else {
@@ -127,6 +125,7 @@ exports.login = async (req, res) => {
               if (result) {
                 const token = jwt.sign(
                   {
+                    id: isUserExist.id,
                     firstName: isUserExist.firstName,
                     lastName: isUserExist.lastName,
                     email: isUserExist.email,
@@ -179,6 +178,7 @@ exports.login = async (req, res) => {
               if (result) {
                 const token = jwt.sign(
                   {
+                    id: isUserEmailExist.id,
                     firstName: isUserEmailExist.firstName,
                     lastName: isUserEmailExist.lastName,
                     email: isUserEmailExist.email,
@@ -259,19 +259,6 @@ exports.sendOTP = async (req, res) => {
         message: "Make sure you already registered",
       });
     } else {
-      const token = jwt.sign(
-        {
-          firstName: isUserExist.firstName,
-          lastName: isUserExist.lastName,
-          email: isUserExist.email,
-          role: isUserExist.role,
-        },
-        secret,
-        {
-          expiresIn: 60 * 5,
-        }
-      );
-
       function getRandomInt() {
         return Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
       }
@@ -279,7 +266,6 @@ exports.sendOTP = async (req, res) => {
       const otp = getRandomInt();
 
       await userModel.findOneAndUpdate(isUserExist._id, {
-        token,
         otp,
       });
 
@@ -300,7 +286,8 @@ exports.sendOTP = async (req, res) => {
             status: "Error",
             message: {
               error: err,
-              solution: "Contact your administrator for help",
+              solution:
+                "Failed to sending email. Contact your administrator for help.",
             },
           });
         } else {
@@ -392,8 +379,9 @@ exports.resetPassword = async (req, res) => {
 
 exports.verify = async (req, res) => {
   try {
-    const { token, id } = req.body;
-    const isUserExist = await userModel.findById(id);
+    const authHeader = req.header("Authorization");
+    const token = authHeader && authHeader.split(" ")[1];
+    const isUserExist = await userModel.findById(req.user.id);
 
     if (!isUserExist) {
       res.status(400).send({
@@ -401,8 +389,8 @@ exports.verify = async (req, res) => {
         message: "Makesure you are registered",
       });
     } else {
-      if (token != isUserExist.token) {
-        await userModel.findByIdAndUpdate(id, {
+      if (token !== isUserExist.token) {
+        await userModel.findByIdAndUpdate(req.user.id, {
           token: "",
         });
         res.status(500).send({
@@ -410,22 +398,9 @@ exports.verify = async (req, res) => {
           message: "Your token is invalid",
         });
       } else {
-        jwt.verify(token, secret, async function (err, decoded) {
-          !err
-            ? res.status(200).send({
-                status: "Valid",
-                message: "Your token still valid",
-                decoded,
-              })
-            : res.status(400).send({
-                status: "Invalid",
-                message: "Your token is invalid",
-              });
-
-          err &&
-            (await userModel.findByIdAndUpdate(id, {
-              token: "",
-            }));
+        res.status(200).send({
+          status: "Valid",
+          message: "Your token still valid",
         });
       }
     }

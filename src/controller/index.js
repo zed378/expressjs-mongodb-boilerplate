@@ -14,8 +14,11 @@ exports.getMessage = async (req, res) => {
 
 exports.addMessage = async (req, res) => {
   try {
+    const { message } = req.body;
+
     res.send({
       status: "Success",
+      data: message,
       message: "Message success create",
     });
   } catch (error) {
