@@ -395,7 +395,7 @@ exports.verify = async (req, res) => {
         });
         res.status(500).send({
           status: "Error",
-          message: "Your token is invalid",
+          message: "Your token is invalid. Relogin, please.",
         });
       } else {
         res.status(200).send({
