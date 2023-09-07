@@ -6,19 +6,19 @@ exports.auth = (req, res, next) => {
   const authHeader = req.header("Authorization");
   const token = authHeader && authHeader.split(" ")[1];
 
-  if (!token) {
-    return res.status(400).send({
+  !token &&
+    res.status(400).send({
       message: "Access Denied",
     });
-  }
 
   try {
     jwt.verify(token, secret, (err, decoded) => {
-      if (err) {
+      err &&
         res.status(400).send({
           message: "Invalid Token. Relogin, please!",
         });
-      } else {
+
+      if (!err) {
         req.user = decoded;
         next();
       }

@@ -13,6 +13,7 @@ const template = fs.readFileSync(__dirname + "/template.html", "utf8");
 const templateOTP = fs.readFileSync(__dirname + "/OTP.html", "utf8");
 const transporter = nodemailer.createTransport({
   service: "hotmail",
+  // service is depends on webserver, hotmail means i am using outlook
   auth: {
     user: process.env.MAIL_USER,
     pass: process.env.MAIL_PASSWORD,
@@ -24,7 +25,7 @@ exports.register = async (req, res) => {
     const { firstName, lastName, email, password } = req.body;
 
     const isUserExist = await userModel.findOne({ email });
-    if (!isUserExist) {
+    !isUserExist &&
       bcrypt.genSalt(saltRounds, function (err, salt) {
         bcrypt.hash(password, salt, async function (err, hash) {
           const newUser = new userModel({
@@ -47,7 +48,7 @@ exports.register = async (req, res) => {
           };
 
           transporter.sendMail(options, async (err, info) => {
-            if (err) {
+            err &&
               res.send({
                 status: "Error",
                 message: {
@@ -56,24 +57,24 @@ exports.register = async (req, res) => {
                     "Failed to sending email. Contact your administrator for help.",
                 },
               });
-            } else {
-              await newUser.save().then(() =>
+
+            !err &&
+              (await newUser.save().then(() =>
                 res.status(200).send({
                   status: "Success",
                   message:
                     "Successfully register. Check your mailbox to activate your account.",
                 })
-              );
-            }
+              ));
           });
         });
       });
-    } else {
+
+    isUserExist &&
       res.status(400).send({
         status: "Error",
         message: "Email already registered!",
       });
-    }
   } catch (error) {
     res.status(400).send({ status: "Error", message: error.message });
   }
@@ -87,14 +88,12 @@ exports.activation = async (req, res) => {
       isActive: true,
     });
 
-    if (isUserExist) {
-      res.status(200).redirect(process.env.FE_URL);
-    } else {
+    isUserExist && res.status(200).redirect(process.env.FE_URL);
+    !isUserExist &&
       res.status(400).send({
         status: "Error",
         message: "Your account failed to activate",
       });
-    }
   } catch (error) {
     res.status(400).send({
       status: "Error",
@@ -109,117 +108,120 @@ exports.login = async (req, res) => {
     const isUserExist = await userModel.findOne({ username: user });
     const isUserEmailExist = await userModel.findOne({ email: user });
 
-    if (isUserExist) {
-      isUserExist.isActive === true
-        ? bcrypt.compare(
-            password,
-            isUserExist.password,
-            async function (err, result) {
-              if (!result || err) {
-                res.status(400).send({
-                  status: "Error",
-                  message: "Email or Username or Password incorrect",
-                });
+    isUserExist &&
+      isUserExist.isActive == true &&
+      bcrypt.compare(
+        password,
+        isUserExist.password,
+        async function (err, result) {
+          (!result || err) &&
+            res.status(400).send({
+              status: "Error",
+              message: "Email or Username or Password incorrect",
+            });
+
+          if (result) {
+            const token = jwt.sign(
+              {
+                id: isUserExist.id,
+                firstName: isUserExist.firstName,
+                lastName: isUserExist.lastName,
+                email: isUserExist.email,
+                role: isUserExist.role,
+              },
+              secret,
+              {
+                expiresIn: 60 * 60 * 24 * 2,
               }
+            );
 
-              if (result) {
-                const token = jwt.sign(
-                  {
-                    id: isUserExist.id,
-                    firstName: isUserExist.firstName,
-                    lastName: isUserExist.lastName,
-                    email: isUserExist.email,
-                    role: isUserExist.role,
-                  },
-                  secret,
-                  {
-                    expiresIn: 60 * 60 * 24 * 2,
-                  }
-                );
+            await userModel.findByIdAndUpdate(isUserExist._id, {
+              token: token,
+            });
 
-                await userModel.findByIdAndUpdate(isUserExist._id, {
-                  token: token,
-                });
+            res.status(200).send({
+              status: "Success",
+              data: {
+                token,
+                id: isUserExist._id,
+                firstName: isUserExist.firstName,
+                lastName: isUserExist.lastName,
+                email: isUserExist.email,
+                username: isUserExist.username,
+                picture: isUserExist.picture,
+                isActive: isUserExist.isActive,
+              },
+            });
+          }
+        }
+      );
+    isUserExist &&
+      isUserExist.isActive == false &&
+      res.status(400).send({
+        status: "Error",
+        message: "Activate your account first. Open your email to activate.",
+      });
 
-                res.status(200).send({
-                  status: "Success",
-                  data: {
-                    token,
-                    id: isUserExist._id,
-                    firstName: isUserExist.firstName,
-                    lastName: isUserExist.lastName,
-                    email: isUserExist.email,
-                    username: isUserExist.username,
-                    picture: isUserExist.picture,
-                    isActive: isUserExist.isActive,
-                  },
-                });
+    isUserEmailExist &&
+      isUserEmailExist.isActive == true &&
+      bcrypt.compare(
+        password,
+        isUserEmailExist.password,
+        async function (err, result) {
+          (err || !result) &&
+            res.status(400).send({
+              status: "Error",
+              message: "Email or Username or Password incorrect",
+            });
+
+          if (result) {
+            const token = jwt.sign(
+              {
+                id: isUserEmailExist.id,
+                firstName: isUserEmailExist.firstName,
+                lastName: isUserEmailExist.lastName,
+                email: isUserEmailExist.email,
+                role: isUserEmailExist.role,
+              },
+              secret,
+              {
+                expiresIn: 60 * 60 * 24 * 2,
               }
-            }
-          )
-        : res.status(400).send({
-            status: "Error",
-            message:
-              "Activate your account first. Open your email to activate.",
-          });
-    } else if (isUserEmailExist) {
-      isUserEmailExist.isActive === true
-        ? bcrypt.compare(
-            password,
-            isUserEmailExist.password,
-            async function (err, result) {
-              if (err || !result) {
-                res.status(400).send({
-                  status: "Error",
-                  message: "Email or Username or Password incorrect",
-                });
-              }
+            );
 
-              if (result) {
-                const token = jwt.sign(
-                  {
-                    id: isUserEmailExist.id,
-                    firstName: isUserEmailExist.firstName,
-                    lastName: isUserEmailExist.lastName,
-                    email: isUserEmailExist.email,
-                    role: isUserEmailExist.role,
-                  },
-                  secret,
-                  {
-                    expiresIn: 60 * 60 * 24 * 2,
-                  }
-                );
+            await userModel.findByIdAndUpdate(isUserEmailExist._id, {
+              token,
+            });
 
-                await userModel.findByIdAndUpdate(isUserEmailExist._id, {
-                  token,
-                });
+            res.status(200).send({
+              status: "Success",
+              data: {
+                token,
+                id: isUserEmailExist.id,
+                firstName: isUserEmailExist.firstName,
+                lastName: isUserEmailExist.lastName,
+                email: isUserEmailExist.email,
+                username: isUserEmailExist.username,
+                picture: isUserEmailExist.picture,
+              },
+            });
+          }
+        }
+      );
 
-                res.status(200).send({
-                  status: "Success",
-                  data: {
-                    token,
-                    id: isUserEmailExist.id,
-                    firstName: isUserEmailExist.firstName,
-                    lastName: isUserEmailExist.lastName,
-                    email: isUserEmailExist.email,
-                    username: isUserEmailExist.username,
-                    picture: isUserEmailExist.picture,
-                  },
-                });
-              }
-            }
-          )
-        : res.status(400).send({
-            status: "Error",
-            message:
-              "Activate your account first. Open your email to activate.",
-          });
-    } else if (!isUserEmailExist || !isUserExist) {
+    isUserEmailExist &&
+      isUserEmailExist.isActive == false &&
+      res.status(400).send({
+        status: "Error",
+        message: "Activate your account first. Open your email to activate.",
+      });
+
+    !isUserEmailExist &&
+      !isUserExist &&
       res.status(400).send({
         status: "Error",
         message: "You're not registered",
       });
-    }
   } catch (error) {
     res.status(400).send({
       status: "Error",
@@ -310,64 +312,53 @@ exports.resetPassword = async (req, res) => {
     const isUserExist = await userModel.findOne({ email });
 
     if (isUserExist) {
-      jwt.verify(isUserExist.token, secret, async (err, decoded) => {
-        if (!err) {
-          if (otp === 101010) {
-            res.status(400).send({
-              status: "Error",
-              message: "Make sure you succeed request OTP",
-            });
-          } else if (otp === isUserExist.otp) {
-            const updateOTP = await userModel.findByIdAndUpdate(
-              isUserExist._id,
-              {
-                otp: 101010,
-                token: "",
-              }
-            );
+      if (otp !== isUserExist.otp) {
+        await userModel.findByIdAndUpdate(isUserExist._id, {
+          token: "",
+          otp: 101010,
+        });
+        res.status(400).send({
+          status: "Invalid",
+          message: "Your OTP is expires. Try request new OTP.",
+        });
+      }
 
-            if (updateOTP) {
-              bcrypt.genSalt(saltRounds, function (err, salt) {
-                bcrypt.hash(password, salt, async function (err, hash) {
-                  const updatePass = await userModel.findByIdAndUpdate(
-                    isUserExist._id,
-                    {
-                      password: hash,
-                    }
-                  );
+      otp === 101010 &&
+        res.status(400).send({
+          status: "Error",
+          message: "Make sure you succeed request OTP",
+        });
 
-                  if (updatePass) {
-                    res.status(200).send({
-                      status: "Success",
-                      message:
-                        "Your password successfully updated. Now you can login with your new password.",
-                    });
-                  } else {
-                    res.status(400).send({
-                      status: "Error",
-                      message: "Failed to reset password",
-                    });
-                  }
+      if (otp === isUserExist.otp) {
+        const updateOTP = await userModel.findByIdAndUpdate(isUserExist.id, {
+          otp: 101010,
+          token: "",
+        });
+
+        updateOTP &&
+          bcrypt.genSalt(saltRounds, function (err, salt) {
+            bcrypt.hash(password, salt, async function (err, hash) {
+              const updatePass = await userModel.findByIdAndUpdate(
+                isUserExist._id,
+                {
+                  password: hash,
+                }
+              );
+              updatePass &&
+                res.status(200).send({
+                  status: "Success",
+                  message:
+                    "Your password successfully updated. Now you can login with your new password.",
                 });
-              });
-            } else {
-              res.status(400).send({
-                status: "Error",
-                message: "Failed to reset token and otp",
-              });
-            }
-          }
-        } else if (otp !== isUserExist.otp) {
-          await userModel.findByIdAndUpdate(isUserExist._id, {
-            token: "",
-            otp: 101010,
+
+              !updatePass &&
+                res.status(400).send({
+                  status: "Error",
+                  message: "Failed to reset password",
+                });
+            });
           });
-          res.status(400).send({
-            status: "Invalid",
-            message: "Your OTP is expires. Try request new OTP.",
-          });
-        }
-      });
+      }
     }
   } catch (error) {
     res.status(400).send({
@@ -383,26 +374,25 @@ exports.verify = async (req, res) => {
     const token = authHeader && authHeader.split(" ")[1];
     const isUserExist = await userModel.findById(req.user.id);
 
-    if (!isUserExist) {
+    !isUserExist &&
       res.status(400).send({
         status: "Error",
         message: "Makesure you are registered",
       });
+
+    if (token !== isUserExist.token) {
+      await userModel.findByIdAndUpdate(req.user.id, {
+        token: "",
+      });
+      res.status(500).send({
+        status: "Error",
+        message: "Your token is invalid. Relogin, please.",
+      });
     } else {
-      if (token !== isUserExist.token) {
-        await userModel.findByIdAndUpdate(req.user.id, {
-          token: "",
-        });
-        res.status(500).send({
-          status: "Error",
-          message: "Your token is invalid. Relogin, please.",
-        });
-      } else {
-        res.status(200).send({
-          status: "Valid",
-          message: "Your token still valid",
-        });
-      }
+      res.status(200).send({
+        status: "Valid",
+        message: "Your token still valid",
+      });
     }
   } catch (error) {
     res.status(400).send({
