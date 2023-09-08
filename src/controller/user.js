@@ -1,14 +1,27 @@
 const { userModel } = require("../model/user");
 const { delImg } = require("../middleware/deleteImage");
+const Joi = require("joi");
 
 exports.updateUserName = async (req, res) => {
   try {
     const { id, username } = req.body;
-    (!id || !username) &&
-      res.status(400).send({
+
+    const inputValidation = Joi.object({
+      id: Joi.string().min(3).required(),
+      username: Joi.string().min(3).required(),
+    });
+
+    const { error } = inputValidation.validate({
+      id,
+      username,
+    });
+
+    if (error) {
+      return res.send({
         status: "Error",
-        message: "Body must not be empty. Need your id to update username.",
+        message: error.details[0].message,
       });
+    }
 
     const isUserExist = await userModel.findById(id);
     const isUsernameExist = await userModel.findOne({ username });
@@ -50,6 +63,23 @@ exports.updatePict = async (req, res) => {
     const { id } = req.body;
     const picture = req.file.filename;
 
+    const inputValidation = Joi.object({
+      id: Joi.string().min(3).required(),
+      picture: Joi.string().min(3).required(),
+    });
+
+    const { error } = inputValidation.validate({
+      id,
+      picture,
+    });
+
+    if (error) {
+      return res.send({
+        status: "Error",
+        message: error.details[0].message,
+      });
+    }
+
     const isUserExist = await userModel.findById(id);
     !isUserExist &&
       res.status(400).send({
@@ -73,7 +103,7 @@ exports.updatePict = async (req, res) => {
   } catch (error) {
     res.status(400).send({
       status: "Error",
-      message: "Failed to update username",
+      message: "Failed to update profile",
     });
   }
 };

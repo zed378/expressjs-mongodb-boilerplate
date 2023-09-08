@@ -19,7 +19,7 @@ const {
 router.post("/register", register);
 router.post("/login", login);
 router.post("/logout", logout);
-router.get("/verify", auth, verify);
+router.post("/verify", verify);
 router.get("/activation", activation);
 router.post("/otp", sendOTP);
 router.post("/reset", resetPassword);
@@ -30,7 +30,7 @@ const { profileImg } = require("../middleware/upload");
 router.post("/username", auth, updateUserName);
 router.post("/profile", auth, profileImg("picture"), updatePict);
 
-// static respond
+// static respond / dummy api
 router.get("/message", getMessage);
 router.post("/add", addMessage);
 

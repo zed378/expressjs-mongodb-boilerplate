@@ -4,6 +4,7 @@ const bcrypt = require("bcrypt");
 const saltRounds = 12;
 const jwt = require("jsonwebtoken");
 const secret = process.env.SECRET;
+const Joi = require("joi");
 
 // package and config for sending email
 const nodemailer = require("nodemailer");
@@ -24,6 +25,27 @@ exports.register = async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
 
+    const inputValidation = Joi.object({
+      firstName: Joi.string().min(3).required(),
+      lastName: Joi.string().min(3).required(),
+      email: Joi.string().email().min(6).required(),
+      password: Joi.string().min(3).required(),
+    });
+
+    const { error } = inputValidation.validate({
+      firstName,
+      lastName,
+      email,
+      password,
+    });
+
+    if (error) {
+      return res.send({
+        status: "Error",
+        message: error.details[0].message,
+      });
+    }
+
     const isUserExist = await userModel.findOne({ email });
     !isUserExist &&
       bcrypt.genSalt(saltRounds, function (err, salt) {
@@ -36,6 +58,8 @@ exports.register = async (req, res) => {
             username: "",
           });
 
+          const saveUser = await newUser.save();
+
           const options = {
             from: process.env.MAIL_USER,
             to: email,
@@ -43,29 +67,27 @@ exports.register = async (req, res) => {
             html: mustache.render(template, {
               firstName: firstName,
               lastName: lastName,
-              link: `${process.env.HOST_URL}/activation?p=${saveUSer.id}`,
+              link: `${process.env.HOST_URL}/activation?p=${saveUser.id}`,
             }),
           };
 
           transporter.sendMail(options, async (err, info) => {
+            !err &&
+              res.status(200).send({
+                status: "Success",
+                message:
+                  "Successfully register. Check your mailbox to activate your account.",
+              });
+
             err &&
               res.send({
                 status: "Error",
                 message: {
                   error: err,
                   solution:
-                    "Failed to sending email. Contact your administrator for help.",
+                    "Failed to sending activation email. Contact your administrator for help.",
                 },
               });
-
-            !err &&
-              (await newUser.save().then(() =>
-                res.status(200).send({
-                  status: "Success",
-                  message:
-                    "Successfully register. Check your mailbox to activate your account.",
-                })
-              ));
           });
         });
       });
@@ -105,8 +127,60 @@ exports.activation = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { user, password } = req.body;
+
+    const inputValidation = Joi.object({
+      user: [
+        Joi.string().min(3).required(),
+        Joi.string().email().min(6).required(),
+      ],
+      password: Joi.string().min(3).required(),
+    });
+
+    const { error } = await inputValidation.validate({ user, password });
+
+    if (error) {
+      return res.send({
+        status: "Error",
+        message: error.details[0].message.includes("types")
+          ? "username length must be at least 3 characters long or email must be valid email."
+          : error.details[0].message,
+      });
+    }
+
     const isUserExist = await userModel.findOne({ username: user });
     const isUserEmailExist = await userModel.findOne({ email: user });
+
+    const token = jwt.sign(
+      {
+        id: isUserExist ? isUserExist.id : isUserEmailExist.id,
+        firstName: isUserExist
+          ? isUserExist.firstName
+          : isUserEmailExist.firstName,
+        lastName: isUserExist
+          ? isUserExist.lastName
+          : isUserEmailExist.lastName,
+        email: isUserExist ? isUserExist.email : isUserEmailExist.email,
+        role: isUserExist ? isUserExist.role : isUserEmailExist.role,
+      },
+      secret,
+      {
+        expiresIn: 60 * 60 * 24 * 2,
+      }
+    );
+
+    const data = {
+      token,
+      id: isUserExist ? isUserExist.id : isUserEmailExist.id,
+      firstName: isUserExist
+        ? isUserExist.firstName
+        : isUserEmailExist.firstName,
+      lastName: isUserExist ? isUserExist.lastName : isUserEmailExist.lastName,
+      email: isUserExist ? isUserExist.email : isUserEmailExist.email,
+      role: isUserExist ? isUserExist.role : isUserEmailExist.role,
+      username: isUserExist ? isUserExist.username : isUserEmailExist.username,
+      picture: isUserExist ? isUserExist.picture : isUserEmailExist.picture,
+      isActive: isUserExist ? isUserExist.isActive : isUserEmailExist.isActive,
+    };
 
     isUserExist &&
       isUserExist.isActive == true &&
@@ -120,39 +194,14 @@ exports.login = async (req, res) => {
               message: "Email or Username or Password incorrect",
             });
 
-          if (result) {
-            const token = jwt.sign(
-              {
-                id: isUserExist.id,
-                firstName: isUserExist.firstName,
-                lastName: isUserExist.lastName,
-                email: isUserExist.email,
-                role: isUserExist.role,
-              },
-              secret,
-              {
-                expiresIn: 60 * 60 * 24 * 2,
-              }
-            );
-
-            await userModel.findByIdAndUpdate(isUserExist._id, {
+          result &&
+            (await userModel.findByIdAndUpdate(isUserExist._id, {
               token: token,
-            });
-
+            })) &&
             res.status(200).send({
               status: "Success",
-              data: {
-                token,
-                id: isUserExist._id,
-                firstName: isUserExist.firstName,
-                lastName: isUserExist.lastName,
-                email: isUserExist.email,
-                username: isUserExist.username,
-                picture: isUserExist.picture,
-                isActive: isUserExist.isActive,
-              },
+              data,
             });
-          }
         }
       );
     isUserExist &&
@@ -174,38 +223,14 @@ exports.login = async (req, res) => {
               message: "Email or Username or Password incorrect",
             });
 
-          if (result) {
-            const token = jwt.sign(
-              {
-                id: isUserEmailExist.id,
-                firstName: isUserEmailExist.firstName,
-                lastName: isUserEmailExist.lastName,
-                email: isUserEmailExist.email,
-                role: isUserEmailExist.role,
-              },
-              secret,
-              {
-                expiresIn: 60 * 60 * 24 * 2,
-              }
-            );
-
-            await userModel.findByIdAndUpdate(isUserEmailExist._id, {
+          result &&
+            (await userModel.findByIdAndUpdate(isUserEmailExist._id, {
               token,
-            });
-
+            })) &&
             res.status(200).send({
               status: "Success",
-              data: {
-                token,
-                id: isUserEmailExist.id,
-                firstName: isUserEmailExist.firstName,
-                lastName: isUserEmailExist.lastName,
-                email: isUserEmailExist.email,
-                username: isUserEmailExist.username,
-                picture: isUserEmailExist.picture,
-              },
+              data,
             });
-          }
         }
       );
 
@@ -252,39 +277,52 @@ exports.logout = async (req, res) => {
 exports.sendOTP = async (req, res) => {
   try {
     const { email } = req.body;
+    const inputValidation = Joi.object({
+      email: Joi.string().email().min(6).required(),
+    });
+
+    const { error } = inputValidation.validate({
+      email,
+    });
+
+    if (error) {
+      return res.send({
+        status: "Error",
+        message: error.details[0].message,
+      });
+    }
+    function getRandomInt() {
+      return Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
+    }
+
+    const otp = getRandomInt();
 
     const isUserExist = await userModel.findOne({ email });
 
-    if (!isUserExist) {
+    !isUserExist &&
       res.status(400).send({
         status: "Error",
         message: "Make sure you already registered",
       });
-    } else {
-      function getRandomInt() {
-        return Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
-      }
 
-      const otp = getRandomInt();
+    const options = {
+      from: process.env.MAIL_USER,
+      to: email,
+      subject: "OTP for reset password",
+      html: mustache.render(templateOTP, {
+        firstName: isUserExist?.firstName,
+        lastName: isUserExist?.lastName,
+        otp: otp,
+      }),
+    };
 
-      await userModel.findOneAndUpdate(isUserExist._id, {
+    isUserExist &&
+      (await userModel.findByIdAndUpdate(isUserExist?.id, {
         otp,
-      });
-
-      const options = {
-        from: process.env.MAIL_USER,
-        to: email,
-        subject: "OTP for reset password",
-        html: mustache.render(templateOTP, {
-          firstName: isUserExist.firstName,
-          lastName: isUserExist.lastName,
-          otp: otp,
-        }),
-      };
-
+      })) &&
       transporter.sendMail(options, (err, info) => {
-        if (err) {
-          res.send({
+        err &&
+          res.status(400).send({
             status: "Error",
             message: {
               error: err,
@@ -292,15 +330,14 @@ exports.sendOTP = async (req, res) => {
                 "Failed to sending email. Contact your administrator for help.",
             },
           });
-        } else {
+
+        !err &&
           res.status(200).send({
             status: "Success",
             message:
               "Yor OTP has been sent. Check your email. If not exist in inbox search on spam.",
           });
-        }
       });
-    }
   } catch (error) {
     res.status(400).send({ status: "Error", message: "Failed to send OTP" });
   }
@@ -309,19 +346,36 @@ exports.sendOTP = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
+
+    const inputValidation = Joi.object({
+      email: Joi.string().email().min(6).required(),
+      password: Joi.string().min(6).required(),
+      otp: Joi.number().min(6).required(),
+    });
+
+    const { error } = inputValidation.validate({
+      email,
+    });
+
+    if (error) {
+      return res.send({
+        status: "Error",
+        message: error.details[0].message,
+      });
+    }
+
     const isUserExist = await userModel.findOne({ email });
 
     if (isUserExist) {
-      if (otp !== isUserExist.otp) {
-        await userModel.findByIdAndUpdate(isUserExist._id, {
+      otp !== isUserExist.otp &&
+        (await userModel.findByIdAndUpdate(isUserExist.id, {
           token: "",
           otp: 101010,
-        });
+        })) &&
         res.status(400).send({
           status: "Invalid",
           message: "Your OTP is expires. Try request new OTP.",
         });
-      }
 
       otp === 101010 &&
         res.status(400).send({
@@ -370,30 +424,39 @@ exports.resetPassword = async (req, res) => {
 
 exports.verify = async (req, res) => {
   try {
-    const authHeader = req.header("Authorization");
-    const token = authHeader && authHeader.split(" ")[1];
-    const isUserExist = await userModel.findById(req.user.id);
+    const { token } = req.body;
 
-    !isUserExist &&
-      res.status(400).send({
-        status: "Error",
-        message: "Makesure you are registered",
-      });
+    jwt.verify(token, secret, async (err, decoded) => {
+      err &&
+        res.status(400).send({
+          message: "Invalid Token. Relogin, please!",
+        });
 
-    if (token !== isUserExist.token) {
-      await userModel.findByIdAndUpdate(req.user.id, {
-        token: "",
-      });
-      res.status(500).send({
-        status: "Error",
-        message: "Your token is invalid. Relogin, please.",
-      });
-    } else {
-      res.status(200).send({
-        status: "Valid",
-        message: "Your token still valid",
-      });
-    }
+      if (!err) {
+        const isUserExist = await userModel.findById(decoded.id);
+
+        !isUserExist &&
+          res.status(400).send({
+            status: "Error",
+            message: "Makesure you are registered",
+          });
+
+        token === isUserExist.token &&
+          res.status(200).send({
+            status: "Valid",
+            message: "Your token still valid",
+          });
+
+        token !== isUserExist.token &&
+          (await userModel.findByIdAndUpdate(decoded.id, {
+            token: "",
+          })) &&
+          res.status(500).send({
+            status: "Error",
+            message: "Your token is invalid. Relogin, please.",
+          });
+      }
+    });
   } catch (error) {
     res.status(400).send({
       status: "Error",
