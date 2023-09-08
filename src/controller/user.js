@@ -1,15 +1,15 @@
 const { userModel } = require("../model/user");
 const { delImg } = require("../middleware/deleteImage");
 const Joi = require("joi");
+const inputValidation = Joi.object({
+  id: Joi.string().min(3),
+  username: Joi.string().min(3),
+  picture: Joi.string().min(3),
+});
 
 exports.updateUserName = async (req, res) => {
   try {
     const { id, username } = req.body;
-
-    const inputValidation = Joi.object({
-      id: Joi.string().min(3).required(),
-      username: Joi.string().min(3).required(),
-    });
 
     const { error } = inputValidation.validate({
       id,
@@ -62,11 +62,6 @@ exports.updatePict = async (req, res) => {
   try {
     const { id } = req.body;
     const picture = req.file.filename;
-
-    const inputValidation = Joi.object({
-      id: Joi.string().min(3).required(),
-      picture: Joi.string().min(3).required(),
-    });
 
     const { error } = inputValidation.validate({
       id,

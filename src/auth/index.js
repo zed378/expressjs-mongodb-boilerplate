@@ -5,6 +5,14 @@ const saltRounds = 12;
 const jwt = require("jsonwebtoken");
 const secret = process.env.SECRET;
 const Joi = require("joi");
+const inputValidation = Joi.object({
+  firstName: Joi.string().min(3),
+  lastName: Joi.string().min(3),
+  email: Joi.string().email().min(6),
+  password: Joi.string().min(3),
+  user: [Joi.string().min(3), Joi.string().email().min(6)],
+  otp: Joi.number().min(6),
+});
 
 // package and config for sending email
 const nodemailer = require("nodemailer");
@@ -24,13 +32,6 @@ const transporter = nodemailer.createTransport({
 exports.register = async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
-
-    const inputValidation = Joi.object({
-      firstName: Joi.string().min(3).required(),
-      lastName: Joi.string().min(3).required(),
-      email: Joi.string().email().min(6).required(),
-      password: Joi.string().min(3).required(),
-    });
 
     const { error } = inputValidation.validate({
       firstName,
@@ -128,14 +129,6 @@ exports.login = async (req, res) => {
   try {
     const { user, password } = req.body;
 
-    const inputValidation = Joi.object({
-      user: [
-        Joi.string().min(3).required(),
-        Joi.string().email().min(6).required(),
-      ],
-      password: Joi.string().min(3).required(),
-    });
-
     const { error } = await inputValidation.validate({ user, password });
 
     if (error) {
@@ -149,6 +142,13 @@ exports.login = async (req, res) => {
 
     const isUserExist = await userModel.findOne({ username: user });
     const isUserEmailExist = await userModel.findOne({ email: user });
+
+    if (!isUserEmailExist && !isUserExist) {
+      return res.status(400).send({
+        status: "Error",
+        message: "You're not registered",
+      });
+    }
 
     const token = jwt.sign(
       {
@@ -240,13 +240,6 @@ exports.login = async (req, res) => {
         status: "Error",
         message: "Activate your account first. Open your email to activate.",
       });
-
-    !isUserEmailExist &&
-      !isUserExist &&
-      res.status(400).send({
-        status: "Error",
-        message: "You're not registered",
-      });
   } catch (error) {
     res.status(400).send({
       status: "Error",
@@ -277,9 +270,6 @@ exports.logout = async (req, res) => {
 exports.sendOTP = async (req, res) => {
   try {
     const { email } = req.body;
-    const inputValidation = Joi.object({
-      email: Joi.string().email().min(6).required(),
-    });
 
     const { error } = inputValidation.validate({
       email,
@@ -346,12 +336,6 @@ exports.sendOTP = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
-
-    const inputValidation = Joi.object({
-      email: Joi.string().email().min(6).required(),
-      password: Joi.string().min(6).required(),
-      otp: Joi.number().min(6).required(),
-    });
 
     const { error } = inputValidation.validate({
       email,
