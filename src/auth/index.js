@@ -140,10 +140,11 @@ exports.login = async (req, res) => {
       });
     }
 
-    const isUserExist = await userModel.findOne({ username: user });
-    const isUserEmailExist = await userModel.findOne({ email: user });
+    const isUserExist = await userModel.find({
+      $or: [{ username: user }, { email: user }],
+    });
 
-    if (!isUserEmailExist && !isUserExist) {
+    if (isUserExist.length === 0) {
       return res.status(400).send({
         status: "Error",
         message: "You're not registered",
@@ -152,15 +153,11 @@ exports.login = async (req, res) => {
 
     const token = jwt.sign(
       {
-        id: isUserExist ? isUserExist.id : isUserEmailExist.id,
-        firstName: isUserExist
-          ? isUserExist.firstName
-          : isUserEmailExist.firstName,
-        lastName: isUserExist
-          ? isUserExist.lastName
-          : isUserEmailExist.lastName,
-        email: isUserExist ? isUserExist.email : isUserEmailExist.email,
-        role: isUserExist ? isUserExist.role : isUserEmailExist.role,
+        id: isUserExist[0].id,
+        firstName: isUserExist[0].firstName,
+        lastName: isUserExist[0].lastName,
+        email: isUserExist[0].email,
+        role: isUserExist[0].role,
       },
       secret,
       {
@@ -170,23 +167,21 @@ exports.login = async (req, res) => {
 
     const data = {
       token,
-      id: isUserExist ? isUserExist.id : isUserEmailExist.id,
-      firstName: isUserExist
-        ? isUserExist.firstName
-        : isUserEmailExist.firstName,
-      lastName: isUserExist ? isUserExist.lastName : isUserEmailExist.lastName,
-      email: isUserExist ? isUserExist.email : isUserEmailExist.email,
-      role: isUserExist ? isUserExist.role : isUserEmailExist.role,
-      username: isUserExist ? isUserExist.username : isUserEmailExist.username,
-      picture: isUserExist ? isUserExist.picture : isUserEmailExist.picture,
-      isActive: isUserExist ? isUserExist.isActive : isUserEmailExist.isActive,
+      id: isUserExist[0].id,
+      firstName: isUserExist[0].firstName,
+      lastName: isUserExist[0].lastName,
+      email: isUserExist[0].email,
+      role: isUserExist[0].role,
+      username: isUserExist[0].username,
+      picture: isUserExist[0].picture,
+      isActive: isUserExist[0].isActive,
     };
 
-    isUserExist &&
-      isUserExist.isActive == true &&
+    isUserExist.length !== 0 &&
+      isUserExist[0].isActive == true &&
       bcrypt.compare(
         password,
-        isUserExist.password,
+        isUserExist[0].password,
         async function (err, result) {
           (!result || err) &&
             res.status(400).send({
@@ -195,7 +190,7 @@ exports.login = async (req, res) => {
             });
 
           result &&
-            (await userModel.findByIdAndUpdate(isUserExist._id, {
+            (await userModel.findByIdAndUpdate(isUserExist[0].id, {
               token: token,
             })) &&
             res.status(200).send({
@@ -204,38 +199,8 @@ exports.login = async (req, res) => {
             });
         }
       );
-    isUserExist &&
-      isUserExist.isActive == false &&
-      res.status(400).send({
-        status: "Error",
-        message: "Activate your account first. Open your email to activate.",
-      });
-
-    isUserEmailExist &&
-      isUserEmailExist.isActive == true &&
-      bcrypt.compare(
-        password,
-        isUserEmailExist.password,
-        async function (err, result) {
-          (err || !result) &&
-            res.status(400).send({
-              status: "Error",
-              message: "Email or Username or Password incorrect",
-            });
-
-          result &&
-            (await userModel.findByIdAndUpdate(isUserEmailExist._id, {
-              token,
-            })) &&
-            res.status(200).send({
-              status: "Success",
-              data,
-            });
-        }
-      );
-
-    isUserEmailExist &&
-      isUserEmailExist.isActive == false &&
+    isUserExist.length !== 0 &&
+      isUserExist[0].isActive == false &&
       res.status(400).send({
         status: "Error",
         message: "Activate your account first. Open your email to activate.",
